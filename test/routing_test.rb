@@ -920,4 +920,46 @@ class RoutingTest < Minitest::Test
     routing = ORTools::RoutingModel.new(manager)
     assert_nil routing.apply_locks([])
   end
+
+  def test_breaks
+    # 5 locations, 2 vehicles, depot 0; transit = travel time + visit duration of the departure node
+    time_matrix = [[0, 6, 9, 8, 7], [6, 0, 8, 3, 2], [9, 8, 0, 11, 10], [8, 3, 11, 0, 1], [7, 2, 10, 1, 0]]
+    service_time = [0, 5, 5, 5, 5]
+    manager = ORTools::RoutingIndexManager.new(5, 2, 0)
+    routing = ORTools::RoutingModel.new(manager)
+    transit_callback_index = routing.register_transit_callback(lambda do |from_index, to_index|
+      from_node = manager.index_to_node(from_index)
+      time_matrix[from_node][manager.index_to_node(to_index)] + service_time[from_node]
+    end)
+    routing.set_arc_cost_evaluator_of_all_vehicles(transit_callback_index)
+    routing.add_dimension(transit_callback_index, 10, 100, true, "Time") # slack so a break fits in a transit
+    time_dimension = routing.mutable_dimension("Time")
+
+    # visit duration per index; start and end indices map to the depot, which has none
+    node_visit_transits = Array.new(routing.size) { |index| service_time[manager.index_to_node(index)] }
+    breaks = 2.times.map do |vehicle|
+      brk = routing.solver.fixed_duration_interval_var(10, 20, 5, false, "Break for vehicle #{vehicle}")
+      time_dimension.set_break_intervals_of_vehicle([brk], vehicle, node_visit_transits)
+      brk
+    end
+
+    solution = routing.solve(first_solution_strategy: :path_cheapest_arc)
+    refute_nil solution
+
+    breaks.each_with_index do |brk, vehicle|
+      assert_equal 1, solution.performed_value(brk)
+      start = solution.start_value(brk)
+      assert_includes 10..20, start
+      assert_equal start + 5, solution.end_value(brk)
+
+      # a break never overlaps a visit
+      index = routing.start(vehicle)
+      until routing.end?(index)
+        node = manager.index_to_node(index)
+        arrival = solution.min(time_dimension.cumul_var(index))
+        refute start < arrival + service_time[node] && start + 5 > arrival, "break overlaps visit of node #{node}"
+        index = solution.value(routing.next_var(index))
+      end
+    end
+  end
 end

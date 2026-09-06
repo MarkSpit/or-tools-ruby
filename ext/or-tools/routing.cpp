@@ -202,7 +202,10 @@ void init_routing(Rice::Module& m) {
     .define_method("objective_value", &Assignment::ObjectiveValue)
     .define_method("value", &Assignment::Value)
     .define_method("min", &Assignment::Min)
-    .define_method("max", &Assignment::Max);
+    .define_method("max", &Assignment::Max)
+    .define_method("start_value", &Assignment::StartValue)
+    .define_method("end_value", &Assignment::EndValue)
+    .define_method("performed_value", &Assignment::PerformedValue);
 
   // not to be confused with operations_research::sat::IntVar
   rb_cIntVar
@@ -257,7 +260,12 @@ void init_routing(Rice::Module& m) {
     .define_method("set_cumul_var_soft_lower_bound", &RoutingDimension::SetCumulVarSoftLowerBound)
     .define_method("cumul_var_soft_lower_bound?", &RoutingDimension::HasCumulVarSoftLowerBound)
     .define_method("cumul_var_soft_lower_bound", &RoutingDimension::GetCumulVarSoftLowerBound)
-    .define_method("cumul_var_soft_lower_bound_coefficient", &RoutingDimension::GetCumulVarSoftLowerBoundCoefficient);
+    .define_method("cumul_var_soft_lower_bound_coefficient", &RoutingDimension::GetCumulVarSoftLowerBoundCoefficient)
+    .define_method(
+      "set_break_intervals_of_vehicle",
+      [](RoutingDimension& self, std::vector<operations_research::IntervalVar*> breaks, int vehicle, std::vector<int64_t> node_visit_transits) {
+        self.SetBreakIntervalsOfVehicle(breaks, vehicle, node_visit_transits);
+      });
 
   Rice::define_class_under<RoutingDisjunctionIndex>(m, "RoutingDisjunctionIndex");
 
@@ -290,6 +298,11 @@ void init_routing(Rice::Module& m) {
       "fixed_duration_interval_var",
       [](operations_research::Solver& self, operations_research::IntVar& start_variable, int64_t duration, const std::string& name) {
         return self.MakeFixedDurationIntervalVar(&start_variable, duration, name);
+      })
+    .define_method(
+      "fixed_duration_interval_var",
+      [](operations_research::Solver& self, int64_t start_min, int64_t start_max, int64_t duration, bool optional, const std::string& name) {
+        return self.MakeFixedDurationIntervalVar(start_min, start_max, duration, optional, name);
       })
     .define_method(
       "cumulative",
